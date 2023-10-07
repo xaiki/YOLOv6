@@ -23,7 +23,7 @@ from yolov6.utils.nms import non_max_suppression_seg, non_max_suppression_seg_so
 from yolov6.utils.torch_utils import get_model_info
 
 class Inferer:
-    def __init__(self, source, webcam, webcam_addr, weights, device, yaml, img_size, half):
+    def __init__(self, weights, device, yaml, img_size, half):
 
         self.__dict__.update(locals())
 
@@ -51,6 +51,7 @@ class Inferer:
         if self.device.type != 'cpu':
             self.model(torch.zeros(1, 3, *self.img_size).to(self.device).type_as(next(self.model.model.parameters())))  # warmup
 
+    def load(self, source, webcam=None):
         # Load data
         self.webcam = webcam
         self.webcam_addr = webcam_addr
@@ -76,6 +77,7 @@ class Inferer:
         fps_calculator = CalcFPS()
         weight_nums = [weight_nums]
         bias_nums = [bias_nums]
+        txt = ''
         for img_src, img_path, vid_cap in tqdm(self.files):
             img, img_src = self.process_image(img_src, self.img_size, self.stride, self.half)
             img = img.to(self.device)
@@ -99,7 +101,7 @@ class Inferer:
                 segments = [self.handle_proto_solo([protos[li].reshape(1, *(protos[li].shape[-3:]))], segconf[li], img.shape[-2:], weight_sums=weight_nums, bias_sums=bias_nums, dyconv=dyconv_channels) for li in range(len(loutputs))][0]
             t2 = time.time()
 
-            
+
 
             if self.webcam:
                 save_path = osp.join(save_dir, self.webcam_addr)
@@ -108,12 +110,15 @@ class Inferer:
                 # Create output files in nested dirs that mirrors the structure of the images' dirs
                 print(osp.dirname(img_path))
                 print(osp.dirname(self.source))
-                rel_path = "test"
-                save_path = osp.join(save_dir, rel_path, osp.basename(img_path))  # im.jpg
-                txt_path = osp.join(save_dir, rel_path, 'labels', osp.splitext(osp.basename(img_path))[0])
-                os.makedirs(osp.join(save_dir, rel_path), exist_ok=True)
+                if save_dir:
+                    rel_path = "test"
+                    save_path = osp.join(save_dir, rel_path, osp.basename(img_path))  # im.jpg
+                    txt_path = osp.join(save_dir, rel_path, 'labels', osp.splitext(osp.basename(img_path))[0])
+                    os.makedirs(osp.join(save_dir, rel_path), exist_ok=True)
+                else:
+                    txt_path = "./debug"
 
-            gn = torch.tensor(img_src.shape)[[1, 0, 1, 0]]  # normalization gain whwh
+            gn = torch.tensor(img_src.shape)[[1, 0, 1, 0]] # normalization gain whwh
             img_ori = img_src.copy()
 
             # check image and font
@@ -128,11 +133,9 @@ class Inferer:
                 print(segments.shape)
                 segments = segments.transpose(2, 0, 1)
                 for *xyxy, conf, cls in reversed(det):
-                    if save_txt:  # Write to file
-                        xywh = (self.box_convert(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
-                        line = (cls, *xywh, conf)
-                        with open(txt_path + '.txt', 'a') as f:
-                            f.write(('%g ' * len(line)).rstrip() % line + '\n')
+                    xywh = (self.box_convert(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
+                    line = (cls, *xywh, conf)
+                    txt += '[' + ('%g, ' * len(line)).rstrip() %line + '],'
 
                     if save_img:
                         print(cls)
@@ -186,6 +189,11 @@ class Inferer:
                         save_path = str(Path(save_path).with_suffix('.mp4'))  # force *.mp4 suffix on results videos
                         vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
                     vid_writer.write(img_src)
+        if save_text:
+            if save_text == True:
+                return f"[{txt.replace(',]', ']'}]"
+            with open(txt_path + '.txt', 'a') as f:
+                f.write(txt)
 
     @staticmethod
     def process_image(img_src, img_size, stride, half):

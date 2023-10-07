@@ -106,7 +106,8 @@ def run(weights=osp.join(ROOT, 'yolov6s.pt'),
             os.makedirs(save_txt_path)
 
     # Inference
-    inferer = Inferer(source, webcam, webcam_addr, weights, device, yaml, img_size, half)
+    inferer = Inferer(weights, device, yaml, img_size, half)
+    inferer.load(source, webcam, webcam_addr)
     inferer.infer(conf_thres, iou_thres, classes, agnostic_nms, max_det, save_dir, save_txt, not not_save_img, hide_labels, hide_conf, view_img, issolo=issolo)
 
     if save_txt or not not_save_img:
